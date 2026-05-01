@@ -11,8 +11,7 @@ for i = 0, 255 do
 end
 
 local function bytesToHex(s)
-	s = string.char(table.unpack(s))
-	local res = s:gsub('(.)', byte2hex)
+	local res = s:gsub('.', byte2hex)
 	return res
 end
 

@@ -88,32 +88,41 @@ local IEEE = 0xedb88320
 local ieeeTable8 = slicingMakeTable(IEEE)
 local IEEETable = ieeeTable8[1]
 
-local Digest = {}
-Digest.mt = { __index = Digest }
+local function newDigest(tab)
+	tab = tab or IEEETable
 
-function Digest:new(o, tab)
-	o = setmetatable(o or {}, self.mt)
-	o.crc = 0
-	o.tab = tab or IEEETable
-	return o
-end
+	local digest = {}
+	digest._sum = 0
 
-function Digest:reset()
-	self.crc = 0
-end
-
-function Digest:update(data)
-	expect(1, data, 'string')
-	if self.tab == IEEETable then
-		self.crc = slicingUpdate(self.crc, ieeeTable8, data)
-		return self
+	function digest.reset()
+		digest._sum = 0
 	end
-	self.crc = simpleUpdate(self.crc, self.tab, data)
-	return self
-end
 
-function Digest:sum()
-	return self.crc
+	function digest.copy()
+		local o = newDigest(tab)
+		o._sum = digest._sum
+		return o
+	end
+
+	function digest.write(data)
+		expect(1, data, 'string', 'number')
+		if type(data) == 'number' then
+			data = string.char(data)
+		end
+
+		if tab == IEEETable then
+			digest._sum = slicingUpdate(digest._sum, ieeeTable8, data)
+			return digest
+		end
+		digest._sum = simpleUpdate(digest._sum, tab, data)
+		return digest
+	end
+
+	function digest.sum()
+		return digest._sum
+	end
+
+	return digest
 end
 
 local function sumIEEE(data)
@@ -124,7 +133,7 @@ end
 return setmetatable({
 	IEEE = IEEE,
 	IEEETable = IEEETable,
-	Digest = Digest,
+	newDigest = newDigest,
 	sumIEEE = sumIEEE,
 }, {
 	__call = function(_, ...)

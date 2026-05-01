@@ -60,13 +60,13 @@ local function newReader(rawReader, dict)
 
 	local decompresser = flate.newReader(rawReader, dict, blshift(1, windowSize + 8))
 
-	local digest = adler32.Digest:new()
+	local digest = adler32.newDigest()
 	local checked = nil
 
 	local function finishRead()
 		if checked == nil then
 			local checksum = bytes2uint32(rawReader.read(4):byte(1, 4))
-			checked = checksum == digest:sum()
+			checked = checksum == digest.sum()
 		end
 		if not checked then
 			error(ERR_CHECKSUM, 2)
@@ -79,17 +79,13 @@ local function newReader(rawReader, dict)
 			finishRead()
 			return nil
 		end
-		if count then
-			digest:update(d)
-		else
-			digest:update(string.char(d))
-		end
+		digest.write(d)
 		return d
 	end
 
 	function reader.readAll()
 		local d = decompresser.readAll()
-		digest:update(d)
+		digest.write(d)
 		finishRead()
 		return d
 	end

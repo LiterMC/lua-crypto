@@ -14,15 +14,6 @@ local function uint32(n)
 	return band(n, 0xffffffff)
 end
 
-local function bePutUint32(arr, n, offset)
-	offset = offset or 0
-	assert(n >= 0)
-	arr[offset + 1] = band(brshift(n, 24), 0xff)
-	arr[offset + 2] = band(brshift(n, 16), 0xff)
-	arr[offset + 3] = band(brshift(n, 8), 0xff)
-	arr[offset + 4] = band(n, 0xff)
-end
-
 local function bePutUint64(arr, n, offset)
 	offset = offset or 0
 	assert(n >= 0)
@@ -192,120 +183,114 @@ local function block(digH, p, pStart, pEnd)
 	digH[1], digH[2], digH[3], digH[4], digH[5], digH[6], digH[7], digH[8] = h1, h2, h3, h4, h5, h6, h7, h8
 end
 
-local Digest = {}
-Digest.mt = { __index = Digest }
-
-function Digest:new(o)
-	o = setmetatable(o or {}, self.mt)
-	o.h = {} -- [8]uint32
-	o.x = {} -- [chunk]byte
-	o.nx = 0
-	o.len = 0
-	o:reset()
-	return o
-end
-
-function Digest:reset()
-	self.h[1] = init1
-	self.h[2] = init2
-	self.h[3] = init3
-	self.h[4] = init4
-	self.h[5] = init5
-	self.h[6] = init6
-	self.h[7] = init7
-	self.h[8] = init8
-	self.nx = 0
-	self.len = 0
-end
-
-function Digest:size()
-	return Size
-end
-
-function Digest:blockSize()
-	return BlockSize
-end
-
-function Digest:copy(o)
-	o = setmetatable(o or {}, getmetatable(self))
-	o.h = {table.unpack(self.h)}
-	o.x = {table.unpack(self.x)}
-	o.nx = self.nx
-	o.len = self.len
-	return o
-end
-
-function Digest:update(data)
-	expect(1, data, 'string', 'table')
-	if type(data) == 'string' then
-		data = {data:byte(1, -1)}
-	end
-	local di = 0
-	local dlen = #data
-	self.len = self.len + dlen
-	if self.nx > 0 then
-		local n = math.min(chunk - self.nx, dlen)
-		table.move(data, 1, n, self.nx + 1, self.x)
-		self.nx = self.nx + n
-		if self.nx == chunk then
-			block(self.h, self.x, 1, chunk + 1)
-			self.nx = 0
-		end
-		di = di + n
-	end
-	if dlen - di >= chunk then
-		local n = band(dlen - di, chunkMaskInv)
-		block(self.h, data, di + 1, di + n)
-		di = di + n
-	end
-	if dlen - di > 0 then
-		local n = math.min(chunk, dlen - di)
-		self.nx = n
-		table.move(data, di + 1, di + n, 1, self.x)
-	end
-	return self
-end
-
-function Digest:sum()
-	return self:copy():_sum()
-end
-
-function Digest:_sum()
-	local len = self.len
-	-- Padding. Add a 1 bit and 0 bits until 56 bytes mod 64.
-	local t = 56 - len % 64
-	if t <= 0 then
-		t = t + 64
-	end
-
-	-- Length in bits.
-	len = len * 8
-	local padlen = setmetatable({ n = t + 8, 0x80 }, zeroArrMt)
-	bePutUint64(padlen, len, t)
-	self:update(padlen)
-
-	assert(self.nx == 0)
-
-	local h = self.h
-
+local function newDigest()
 	local digest = {}
-	bePutUint32(digest, h[1], 0)
-	bePutUint32(digest, h[2], 4)
-	bePutUint32(digest, h[3], 8)
-	bePutUint32(digest, h[4], 12)
-	bePutUint32(digest, h[5], 16)
-	bePutUint32(digest, h[6], 20)
-	bePutUint32(digest, h[7], 24)
-	bePutUint32(digest, h[8], 28)
+	digest._h = {} -- [8]uint32
+	digest._x = {} -- [chunk]byte
+	digest._nx = 0
+	digest._len = 0
+
+	function digest.reset()
+		local h = digest._h
+		h[1] = init1
+		h[2] = init2
+		h[3] = init3
+		h[4] = init4
+		h[5] = init5
+		h[6] = init6
+		h[7] = init7
+		h[8] = init8
+		digest.nx = 0
+		digest.len = 0
+	end
+
+	digest.reset()
+
+	function digest.size()
+		return Size
+	end
+
+	function digest.blockSize()
+		return BlockSize
+	end
+
+	function digest.copy()
+		local o = newDigest()
+		o._h = {table.unpack(digest._h)}
+		o._x = {table.unpack(digest._x)}
+		o._nx = digest._nx
+		o._len = digest._len
+		return o
+	end
+
+	function digest.write(data)
+		expect(1, data, 'string', 'number', 'table')
+		if type(data) == 'string' then
+			data = {data:byte(1, -1)}
+		elseif type(data) == 'number' then
+			data = {data}
+		end
+
+		local di = 0
+		local dlen = #data
+		digest._len = digest._len + dlen
+		if digest._nx > 0 then
+			local n = math.min(chunk - digest._nx, dlen)
+			table.move(data, 1, n, digest._nx + 1, digest._x)
+			digest._nx = digest._nx + n
+			if digest._nx == chunk then
+				block(digest._h, digest._x, 1, chunk + 1)
+				digest._nx = 0
+			end
+			di = di + n
+		end
+		if dlen - di >= chunk then
+			local n = band(dlen - di, chunkMaskInv)
+			block(digest._h, data, di + 1, di + n)
+			di = di + n
+		end
+		if dlen - di > 0 then
+			local n = math.min(chunk, dlen - di)
+			digest._nx = n
+			table.move(data, di + 1, di + n, 1, digest._x)
+		end
+
+		return digest
+	end
+
+	function digest.sum()
+		return digest.copy()._sum()
+	end
+
+	function digest._sum()
+		local len = digest._len
+		-- Padding. Add a 1 bit and 0 bits until 56 bytes mod 64.
+		local t = 56 - len % 64
+		if t <= 0 then
+			t = t + 64
+		end
+
+		-- Length in bits.
+		len = len * 8
+		local padlen = setmetatable({ n = t + 8, 0x80 }, zeroArrMt)
+		bePutUint64(padlen, len, t)
+		digest.write(padlen)
+
+		assert(digest._nx == 0)
+
+		local h = digest._h
+		return string.pack('>IIIIIIII', h[1], h[2], h[3], h[4], h[5], h[6], h[7], h[8])
+	end
+
 	return digest
 end
 
 local function sum(data)
-	return Digest:new():update(data):_sum()
+	return newDigest().write(data)._sum()
 end
 
 return setmetatable({
-	Digest = Digest,
+	newDigest = newDigest,
 	sum = sum,
 }, {
 	__call = function(_, ...)
