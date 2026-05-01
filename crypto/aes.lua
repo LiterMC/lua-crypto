@@ -16,9 +16,8 @@
 
 local expect = require('cc.expect')
 
-local band, bor, bxor, bnot =
-	bit.band, bit.bor, bit.bxor, bit.bnot
-local blshift, brshift = bit.blshift, bit.blogic_rshift
+local band, bor, bxor = bit32.band, bit32.bor, bit32.bxor
+local blshift, brshift = bit32.lshift, bit32.rshift
 
 local function uint8(v)
 	return band(v, 0xff)
@@ -29,7 +28,7 @@ local function xor_intx4(a1, a2, a3, a4, b1, b2, b3, b4)
 end
 
 local function bytes2uint32(a, b, c, d)
-	return bor(d, bor(blshift(c, 8), bor(blshift(b, 16), blshift(a, 24))))
+	return bor(blshift(a, 24), blshift(b, 16), blshift(c, 8), d)
 end
 
 local function uint32ToBytes(v)
@@ -363,18 +362,18 @@ local function encryptBlock(xk, s0, s1, s2, s3)
 	local k = 4
 	local t0, t1, t2, t3
 	for _ = 1, nr do
-		t0 = bxor(xk[k+1], bxor(te0[1 + uint8(brshift(s0, 24))], bxor(te1[1 + uint8(brshift(s1, 16))], bxor(te2[1 + uint8(brshift(s2, 8))], te3[1 + uint8(s3)]))))
-		t1 = bxor(xk[k+2], bxor(te0[1 + uint8(brshift(s1, 24))], bxor(te1[1 + uint8(brshift(s2, 16))], bxor(te2[1 + uint8(brshift(s3, 8))], te3[1 + uint8(s0)]))))
-		t2 = bxor(xk[k+3], bxor(te0[1 + uint8(brshift(s2, 24))], bxor(te1[1 + uint8(brshift(s3, 16))], bxor(te2[1 + uint8(brshift(s0, 8))], te3[1 + uint8(s1)]))))
-		t3 = bxor(xk[k+4], bxor(te0[1 + uint8(brshift(s3, 24))], bxor(te1[1 + uint8(brshift(s0, 16))], bxor(te2[1 + uint8(brshift(s1, 8))], te3[1 + uint8(s2)]))))
+		t0 = bxor(xk[k+1], te0[1 + uint8(brshift(s0, 24))], te1[1 + uint8(brshift(s1, 16))], te2[1 + uint8(brshift(s2, 8))], te3[1 + uint8(s3)])
+		t1 = bxor(xk[k+2], te0[1 + uint8(brshift(s1, 24))], te1[1 + uint8(brshift(s2, 16))], te2[1 + uint8(brshift(s3, 8))], te3[1 + uint8(s0)])
+		t2 = bxor(xk[k+3], te0[1 + uint8(brshift(s2, 24))], te1[1 + uint8(brshift(s3, 16))], te2[1 + uint8(brshift(s0, 8))], te3[1 + uint8(s1)])
+		t3 = bxor(xk[k+4], te0[1 + uint8(brshift(s3, 24))], te1[1 + uint8(brshift(s0, 16))], te2[1 + uint8(brshift(s1, 8))], te3[1 + uint8(s2)])
 		k = k + 4
 		s0, s1, s2, s3 = t0, t1, t2, t3
 	end
 
-	s0 = bor(blshift(sbox0[1 + uint8(brshift(t0, 24))], 24), bor(blshift(sbox0[1 + uint8(brshift(t1, 16))], 16), bor(blshift(sbox0[1 + uint8(brshift(t2, 8))], 8), sbox0[1 + uint8(t3)])))
-	s1 = bor(blshift(sbox0[1 + uint8(brshift(t1, 24))], 24), bor(blshift(sbox0[1 + uint8(brshift(t2, 16))], 16), bor(blshift(sbox0[1 + uint8(brshift(t3, 8))], 8), sbox0[1 + uint8(t0)])))
-	s2 = bor(blshift(sbox0[1 + uint8(brshift(t2, 24))], 24), bor(blshift(sbox0[1 + uint8(brshift(t3, 16))], 16), bor(blshift(sbox0[1 + uint8(brshift(t0, 8))], 8), sbox0[1 + uint8(t1)])))
-	s3 = bor(blshift(sbox0[1 + uint8(brshift(t3, 24))], 24), bor(blshift(sbox0[1 + uint8(brshift(t0, 16))], 16), bor(blshift(sbox0[1 + uint8(brshift(t1, 8))], 8), sbox0[1 + uint8(t2)])))
+	s0 = bor(blshift(sbox0[1 + uint8(brshift(t0, 24))], 24), blshift(sbox0[1 + uint8(brshift(t1, 16))], 16), blshift(sbox0[1 + uint8(brshift(t2, 8))], 8), sbox0[1 + uint8(t3)])
+	s1 = bor(blshift(sbox0[1 + uint8(brshift(t1, 24))], 24), blshift(sbox0[1 + uint8(brshift(t2, 16))], 16), blshift(sbox0[1 + uint8(brshift(t3, 8))], 8), sbox0[1 + uint8(t0)])
+	s2 = bor(blshift(sbox0[1 + uint8(brshift(t2, 24))], 24), blshift(sbox0[1 + uint8(brshift(t3, 16))], 16), blshift(sbox0[1 + uint8(brshift(t0, 8))], 8), sbox0[1 + uint8(t1)])
+	s3 = bor(blshift(sbox0[1 + uint8(brshift(t3, 24))], 24), blshift(sbox0[1 + uint8(brshift(t0, 16))], 16), blshift(sbox0[1 + uint8(brshift(t1, 8))], 8), sbox0[1 + uint8(t2)])
 
 	s0 = bxor(s0, xk[k+1])
 	s1 = bxor(s1, xk[k+2])
@@ -394,18 +393,18 @@ local function decryptBlock(xk, s0, s1, s2, s3)
 	local k = 4
 	local t0, t1, t2, t3
 	for _ = 1, nr do
-		t0 = bxor(xk[k+1], bxor(td0[1 + uint8(brshift(s0, 24))], bxor(td1[1 + uint8(brshift(s3, 16))], bxor(td2[1 + uint8(brshift(s2, 8))], td3[1 + uint8(s1)]))))
-		t1 = bxor(xk[k+2], bxor(td0[1 + uint8(brshift(s1, 24))], bxor(td1[1 + uint8(brshift(s0, 16))], bxor(td2[1 + uint8(brshift(s3, 8))], td3[1 + uint8(s2)]))))
-		t2 = bxor(xk[k+3], bxor(td0[1 + uint8(brshift(s2, 24))], bxor(td1[1 + uint8(brshift(s1, 16))], bxor(td2[1 + uint8(brshift(s0, 8))], td3[1 + uint8(s3)]))))
-		t3 = bxor(xk[k+4], bxor(td0[1 + uint8(brshift(s3, 24))], bxor(td1[1 + uint8(brshift(s2, 16))], bxor(td2[1 + uint8(brshift(s1, 8))], td3[1 + uint8(s0)]))))
+		t0 = bxor(xk[k+1], td0[1 + uint8(brshift(s0, 24))], td1[1 + uint8(brshift(s3, 16))], td2[1 + uint8(brshift(s2, 8))], td3[1 + uint8(s1)])
+		t1 = bxor(xk[k+2], td0[1 + uint8(brshift(s1, 24))], td1[1 + uint8(brshift(s0, 16))], td2[1 + uint8(brshift(s3, 8))], td3[1 + uint8(s2)])
+		t2 = bxor(xk[k+3], td0[1 + uint8(brshift(s2, 24))], td1[1 + uint8(brshift(s1, 16))], td2[1 + uint8(brshift(s0, 8))], td3[1 + uint8(s3)])
+		t3 = bxor(xk[k+4], td0[1 + uint8(brshift(s3, 24))], td1[1 + uint8(brshift(s2, 16))], td2[1 + uint8(brshift(s1, 8))], td3[1 + uint8(s0)])
 		k = k + 4
 		s0, s1, s2, s3 = t0, t1, t2, t3
 	end
 
-	s0 = bor(blshift(sbox1[1 + uint8(brshift(t0, 24))], 24), bor(blshift(sbox1[1 + uint8(brshift(t3, 16))], 16), bor(blshift(sbox1[1 + uint8(brshift(t2, 8))], 8), sbox1[1 + uint8(t1)])))
-	s1 = bor(blshift(sbox1[1 + uint8(brshift(t1, 24))], 24), bor(blshift(sbox1[1 + uint8(brshift(t0, 16))], 16), bor(blshift(sbox1[1 + uint8(brshift(t3, 8))], 8), sbox1[1 + uint8(t2)])))
-	s2 = bor(blshift(sbox1[1 + uint8(brshift(t2, 24))], 24), bor(blshift(sbox1[1 + uint8(brshift(t1, 16))], 16), bor(blshift(sbox1[1 + uint8(brshift(t0, 8))], 8), sbox1[1 + uint8(t3)])))
-	s3 = bor(blshift(sbox1[1 + uint8(brshift(t3, 24))], 24), bor(blshift(sbox1[1 + uint8(brshift(t2, 16))], 16), bor(blshift(sbox1[1 + uint8(brshift(t1, 8))], 8), sbox1[1 + uint8(t0)])))
+	s0 = bor(blshift(sbox1[1 + uint8(brshift(t0, 24))], 24), blshift(sbox1[1 + uint8(brshift(t3, 16))], 16), blshift(sbox1[1 + uint8(brshift(t2, 8))], 8), sbox1[1 + uint8(t1)])
+	s1 = bor(blshift(sbox1[1 + uint8(brshift(t1, 24))], 24), blshift(sbox1[1 + uint8(brshift(t0, 16))], 16), blshift(sbox1[1 + uint8(brshift(t3, 8))], 8), sbox1[1 + uint8(t2)])
+	s2 = bor(blshift(sbox1[1 + uint8(brshift(t2, 24))], 24), blshift(sbox1[1 + uint8(brshift(t1, 16))], 16), blshift(sbox1[1 + uint8(brshift(t0, 8))], 8), sbox1[1 + uint8(t3)])
+	s3 = bor(blshift(sbox1[1 + uint8(brshift(t3, 24))], 24), blshift(sbox1[1 + uint8(brshift(t2, 16))], 16), blshift(sbox1[1 + uint8(brshift(t1, 8))], 8), sbox1[1 + uint8(t0)])
 
 	s0 = bxor(s0, xk[k+1])
 	s1 = bxor(s1, xk[k+2])
@@ -416,10 +415,12 @@ local function decryptBlock(xk, s0, s1, s2, s3)
 end
 
 local function subw(w)
-	return bxor(blshift(sbox0[1 + uint8(brshift(w, 24))], 24),
-		bxor(blshift(sbox0[1 + uint8(brshift(w, 16))], 16),
-		bxor(blshift(sbox0[1 + uint8(brshift(w, 8))], 8),
-		sbox0[1 + uint8(w)])))
+	return bxor(
+		blshift(sbox0[1 + uint8(brshift(w, 24))], 24),
+		blshift(sbox0[1 + uint8(brshift(w, 16))], 16),
+		blshift(sbox0[1 + uint8(brshift(w, 8))], 8),
+		sbox0[1 + uint8(w)]
+	)
 end
 
 local function rotw(w)
@@ -449,7 +450,7 @@ local function expandKey(key)
 		for j = 1, 4 do
 			local x = enc[ei + j]
 			if i > 0 and i + 4 < kl then
-				x = bxor(td0[1 + sbox0[1 + uint8(brshift(x, 24))]], bxor(td1[1 + sbox0[1 + uint8(brshift(x, 16))]], bxor(td2[1 + sbox0[1 + uint8(brshift(x, 8))]], td3[1 + sbox0[1 + uint8(x)]])))
+				x = bxor(td0[1 + sbox0[1 + uint8(brshift(x, 24))]], td1[1 + sbox0[1 + uint8(brshift(x, 16))]], td2[1 + sbox0[1 + uint8(brshift(x, 8))]], td3[1 + sbox0[1 + uint8(x)]])
 			end
 			dec[i + j] = x
 		end

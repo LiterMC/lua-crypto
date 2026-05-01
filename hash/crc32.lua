@@ -8,8 +8,8 @@
 local expect = require('cc.expect')
 
 local band, bor, bxor, bnot =
-	bit.band, bit.bor, bit.bxor, bit.bnot
-local blshift, brshift = bit.blshift, bit.blogic_rshift
+	bit32.band, bit32.bor, bit32.bxor, bit32.bnot
+local blshift, brshift = bit32.lshift, bit32.rshift
 
 local function uint8(v)
 	return band(v, 0xff)
@@ -63,10 +63,17 @@ local function slicingUpdate(crc, tab, p)
 	if #p >= slicing8Cutoff then
 		crc = bnot(crc)
 		while #p > 8 do
-			crc = bxor(crc, bor(p:byte(1), bor(blshift(p:byte(2), 8), bor(blshift(p:byte(3), 16), blshift(p:byte(4), 24)))))
-			crc = bxor(tab[1][1 + p:byte(8)], bxor(tab[2][1 + p:byte(7)], bxor(tab[3][1 + p:byte(6)], bxor(tab[4][1 + p:byte(5)],
-			bxor(tab[5][1 + brshift(crc, 24)], bxor(tab[6][1 + uint8(brshift(crc, 16))],
-			bxor(tab[7][1 + uint8(brshift(crc, 8))], bxor(tab[8][1 + uint8(crc)]))))))))
+			crc = bxor(crc, bor(p:byte(1), blshift(p:byte(2), 8), blshift(p:byte(3), 16), blshift(p:byte(4), 24)))
+			crc = bxor(
+				tab[1][1 + p:byte(8)],
+				tab[2][1 + p:byte(7)],
+				tab[3][1 + p:byte(6)],
+				tab[4][1 + p:byte(5)],
+				tab[5][1 + brshift(crc, 24)],
+				tab[6][1 + uint8(brshift(crc, 16))],
+				tab[7][1 + uint8(brshift(crc, 8))],
+				tab[8][1 + uint8(crc)]
+			)
 			p = p:sub(9)
 		end
 		crc = bnot(crc)
@@ -114,9 +121,13 @@ local function sumIEEE(data)
 	return slicingUpdate(0, ieeeTable8, data)
 end
 
-return {
+return setmetatable({
 	IEEE = IEEE,
 	IEEETable = IEEETable,
 	Digest = Digest,
 	sumIEEE = sumIEEE,
-}
+}, {
+	__call = function(_, ...)
+		return sumIEEE(...)
+	end
+})

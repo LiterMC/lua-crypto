@@ -1,25 +1,25 @@
 
 package.path = package.path .. ';../../?;../../?.lua;../../?/init.lua'
 
-local crc32 = require('hash.crc32')
+local adler32 = require('hash.adler32')
 
 local function hex(n)
 	return string.format('%08x', n)
 end
 
 local tests = {
-	{'', '00000000'},
-	{'abc', '352441c2'},
-	{'12345678', '9ae0daaf'},
-	{'advancedperipherals', 'b0b2c566'},
-	{'\x00', 'd202ef8d'},
+	{'', '00000001'},
+	{'abc', '024d0127'},
+	{'12345678', '074001a5'},
+	{'advancedperipherals', '4d9c07d6'},
+	{'\x00', '00010001'},
 	{
 		'a very very very very very very very very very very very very very very very very long text',
-		'971f2601',
+		'29332277',
 	},
 	{
 		'super looooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong text',
-		'2f25050c',
+		'c73541bb',
 	},
 }
 
@@ -27,9 +27,9 @@ local passed = 0
 
 for _, data in ipairs(tests) do
 	local input, expect = data[1], data[2]
-	local o = hex(crc32(input))
+	local o = hex(adler32(input))
 	if o ~= expect then
-		printError(string.format('crc32 for %q is %s, expect %s', input, o, expect))
+		printError(string.format('adler32 for %q is %s, expect %s', input, o, expect))
 	else
 		passed = passed + 1
 	end

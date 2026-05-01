@@ -1,4 +1,6 @@
 
+package.path = package.path .. ';../../?;../../?.lua;../../?/init.lua'
+
 local aes = require('crypto.aes')
 
 local byte2hex = {}

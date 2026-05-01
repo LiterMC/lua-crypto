@@ -7,17 +7,11 @@
 
 local expect = require('cc.expect')
 
-local band, bor, bxor, bnot =
-	bit.band, bit.bor, bit.bxor, bit.bnot
-local blshift, brshift = bit.blshift, bit.blogic_rshift
+local band, bor, bxor, bnot = bit32.band, bit32.bor, bit32.bxor, bit32.bnot
+local brrotate, blshift, brshift = bit32.rrotate, bit32.lshift, bit32.rshift
 
 local function uint32(n)
 	return band(n, 0xffffffff)
-end
-
-local function rotateLeft32(x, k)
-	local s = band(k, 31)
-	return bor(uint32(blshift(x, s)), brshift(x, 32 - s))
 end
 
 local function bePutUint32(arr, n, offset)
@@ -143,14 +137,14 @@ local function block(digH, p, pStart, pEnd)
 	while pEnd - pStart + 1 >= chunk do
 		for i = 1, 16 do
 			local j = pStart + (i - 1) * 4
-			w[i] = bor(blshift(p[j + 0], 24), bor(blshift(p[j + 1], 16), bor(blshift(p[j + 2], 8), p[j + 3])))
+			w[i] = bor(blshift(p[j + 0], 24), blshift(p[j + 1], 16), blshift(p[j + 2], 8), p[j + 3])
 			assert(w[i] >= 0)
 		end
 		for i = 17, 64 do
 			local v1 = w[i-2]
-			local t1 = bxor(bxor(rotateLeft32(v1, -17), rotateLeft32(v1, -19)), brshift(v1, 10))
+			local t1 = bxor(brrotate(v1, 17), brrotate(v1, 19), brshift(v1, 10))
 			local v2 = w[i-15]
-			local t2 = bxor(bxor(rotateLeft32(v2, -7), rotateLeft32(v2, -18)), brshift(v2, 3))
+			local t2 = bxor(brrotate(v2, 7), brrotate(v2, 18), brshift(v2, 3))
 			w[i] = uint32(t1 + w[i-7] + t2 + w[i-16])
 			assert(w[i] >= 0)
 		end
@@ -160,7 +154,7 @@ local function block(digH, p, pStart, pEnd)
 		for i = 1, 64 do
 			local t1 = uint32(
 				h +
-				bxor(bxor(rotateLeft32(e, -6), rotateLeft32(e, -11)), rotateLeft32(e, -25)) +
+				bxor(brrotate(e, 6), brrotate(e, 11), brrotate(e, 25)) +
 				bxor(band(e, f), band(bnot(e), g)) +
 				_K[i] +
 				w[i]
@@ -168,8 +162,8 @@ local function block(digH, p, pStart, pEnd)
 			assert(t1 >= 0)
 
 			local t2 = uint32(
-				bxor(bxor(rotateLeft32(a, -2), rotateLeft32(a, -13)), rotateLeft32(a, -22)) +
-				bxor(bxor(band(a, b), band(a, c)), band(b, c))
+				bxor(brrotate(a, 2), brrotate(a, 13), brrotate(a, 22)) +
+				bxor(band(a, b), band(a, c), band(b, c))
 			)
 			assert(t2 >= 0)
 
@@ -307,12 +301,14 @@ function Digest:_sum()
 end
 
 local function sum(data)
-	local dig = Digest:new()
-	dig:update(data)
-	return dig:_sum()
+	return Digest:new():update(data):_sum()
 end
 
-return {
+return setmetatable({
 	Digest = Digest,
 	sum = sum,
-}
+}, {
+	__call = function(_, ...)
+		return sum(...)
+	end
+})

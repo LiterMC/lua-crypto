@@ -1,4 +1,6 @@
 
+package.path = package.path .. ';../../?;../../?.lua;../../?/init.lua'
+
 local sha256 = require('hash.sha256')
 
 local byte2hex = {}
@@ -37,7 +39,7 @@ local passed = 0
 
 for i, data in ipairs(tests) do
 	local input, expect = data[1], data[2]
-	local o = bytesToHex(sha256.sum(input))
+	local o = bytesToHex(sha256(input))
 	if o ~= expect then
 		printError(string.format('[%d] sha256 for %q is %s, expect %s', i, input, o, expect))
 	else
