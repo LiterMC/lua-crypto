@@ -83,40 +83,35 @@ local function newBitsReader(rawReader)
 	return bitsReader
 end
 
-local DictDecoder = {}
-DictDecoder.mt = { __index = DictDecoder }
+local function newDictDecoder(maxBits, symTable)
+	expect(1, maxBits, 'number')
+	expect(2, symTable, 'table')
 
-function DictDecoder:new(o, maxBits, symTable)
-	expect(2, maxBits, 'number')
-	expect(3, symTable, 'table')
+	local dictDecoder = {}
 
-	o = setmetatable(o or {}, self.mt)
-	o.maxBits = maxBits
-	o.symTable = symTable
-	return o
-end
-
-function DictDecoder:readFrom(bitsReader)
-	local code = 0
-	for bits = 1, self.maxBits do
-		local bitval = bitsReader.readBits(1)
-		if not bitval then
-			error('EOF', 2)
+	function dictDecoder.readFrom(bitsReader)
+		local code = 0
+		for bits = 1, maxBits do
+			local bitval = bitsReader.readBits(1)
+			if not bitval then
+				error('EOF', 2)
+			end
+			code = bor(code, blshift(bitval, bits - 1))
+			local symbol = symTable[1 + code]
+			if symbol and band(symbol, 0xf) == bits then
+				return brshift(symbol, 4)
+			end
 		end
-		code = bor(code, blshift(bitval, bits - 1))
-		local symbol = self.symTable[code]
-		if symbol and band(symbol, 0xf) == bits then
-			return brshift(symbol, 4)
-		end
+		error('flate: invalid huffman code')
 	end
-	error('flate: invalid huffman code')
+
+	return dictDecoder
 end
 
 local MAX_NUM_DIST = 30
 local MAX_MATCH_OFFSET = 32768
 
 local CODE_ORDER = {17, 18, 19, 1, 9, 8, 10, 7, 11, 6, 12, 5, 13, 4, 14, 3, 15, 2, 16}
-local CODE_ORDER_N = #CODE_ORDER
 
 local function buildHuffmanTable(lengths, startIndex, endIndex)
 	startIndex = startIndex or 1
@@ -149,7 +144,7 @@ local function buildHuffmanTable(lengths, startIndex, endIndex)
 	end
 
 	if code ~= blshift(1, max) and not (code == 1 and max == 1) then
-		error('flate: incorrect huffman lengths ' .. code .. ' ' .. max .. ' ' .. table.concat(lengths, ',', startIndex, endIndex))
+		error('flate: incorrect huffman lengths ' .. code .. ' ' .. max)
 	end
 
 	local symTable = {}
@@ -165,7 +160,7 @@ local function buildHuffmanTable(lengths, startIndex, endIndex)
 			-- Fill all entries that match this prefix
 			local fill = bor(1, max - len)
 			for j = 0, fill - 1 do
-				symTable[bor(reverse, blshift(j, len))] = chunk
+				symTable[1 + bor(reverse, blshift(j, len))] = chunk
 			end
 		end
 	end
@@ -188,7 +183,7 @@ local function createFixedHuffmanDecoder()
 	for i = 281, 288 do
 		bits[i] = 8
 	end
-	return DictDecoder:new(nil, buildHuffmanTable(bits))
+	return newDictDecoder(buildHuffmanTable(bits))
 end
 
 local FIXED_HUFFMAN_DECODER = createFixedHuffmanDecoder()
@@ -208,6 +203,24 @@ local function newReader(rawReader, dict, windowSize)
 	local isFinal = false
 
 	local YIELD_DATA_SYM = {}
+
+	local history = ''
+
+	local function output(d)
+		local i = #d - windowSize
+		if i >= 0 then
+			history = d:sub(i + 1)
+		else
+			i = i + #history
+			if i <= 0 then
+				history = history .. d
+			else
+				history = history:sub(i + 1) .. d
+			end
+		end
+		coroutine.yield(YIELD_DATA_SYM, d)
+	end
+
 	local function blockReader()
 		isFinal = bitsReader.readBits(1) ~= 0
 		local typ = bitsReader.readBits(2)
@@ -222,7 +235,7 @@ local function newReader(rawReader, dict, windowSize)
 			if len == 0 then
 				return
 			end
-			coroutine.yield(YIELD_DATA_SYM, rawReader.read(len))
+			output(rawReader.read(len))
 			return
 		elseif typ == 3 then
 			-- 3 is reserved
@@ -250,18 +263,18 @@ local function newReader(rawReader, dict, windowSize)
 			for i = 1, nclen do
 				codebits[CODE_ORDER[i]] = bitsReader.readBits(3)
 			end
-			for i = nclen + 1, CODE_ORDER_N do
+			for i = nclen + 1, #CODE_ORDER do
 				codebits[CODE_ORDER[i]] = 0
 			end
 
-			local hclen = DictDecoder:new(nil, buildHuffmanTable(codebits))
+			local hclen = newDictDecoder(buildHuffmanTable(codebits))
 
 			local bits = {}
 			-- HLIT + 257 code lengths, HDIST + 1 code lengths,
 			-- using the code length Huffman code.
 			local i, n = 1, nlit + ndist
 			while i <= n do
-				local x = hclen:readFrom(bitsReader)
+				local x = hclen.readFrom(bitsReader)
 				if x < 16 then
 					-- Actual length.
 					bits[i] = x
@@ -298,29 +311,12 @@ local function newReader(rawReader, dict, windowSize)
 				end
 			end
 
-			decoder = DictDecoder:new(nil, buildHuffmanTable(bits, 1, nlit))
-			distDecoder = DictDecoder:new(nil, buildHuffmanTable(bits, nlit + 1, n))
-		end
-
-		local history = ''
-
-		local function output(d)
-			local i = #d - windowSize
-			if i >= 0 then
-				history = d:sub(i + 1)
-			else
-				i = i + #history
-				if i <= 0 then
-					history = history .. d
-				else
-					history = history:sub(i + 1) .. d
-				end
-			end
-			coroutine.yield(YIELD_DATA_SYM, d)
+			decoder = newDictDecoder(buildHuffmanTable(bits, 1, nlit))
+			distDecoder = newDictDecoder(buildHuffmanTable(bits, nlit + 1, n))
 		end
 
 		while true do
-			local sym = decoder:readFrom(bitsReader)
+			local sym = decoder.readFrom(bitsReader)
 			if sym == 256 then
 				return
 			end
@@ -357,7 +353,7 @@ local function newReader(rawReader, dict, windowSize)
 				if typ == 1 then
 					dist = reverse8(blshift(bitsReader.readBits(5), 3))
 				else
-					dist = distDecoder:readFrom(bitsReader)
+					dist = distDecoder.readFrom(bitsReader)
 				end
 
 				if dist < 4 then
@@ -370,6 +366,9 @@ local function newReader(rawReader, dict, windowSize)
 					dist = blshift(1, nb + 1) + 1 + extra
 				else
 					error('flate: unexpected distance value ' .. dist)
+				end
+				if dist <= #history then
+					error(string.format('flate: distance ' .. dist .. ' overflowed ' .. #history))
 				end
 				while length > dist do
 					local out = history:sub(-dist)
