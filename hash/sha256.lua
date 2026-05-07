@@ -9,40 +9,24 @@ local expect = require('cc.expect')
 
 local band, bor, bxor, bnot = bit32.band, bit32.bor, bit32.bxor, bit32.bnot
 local brrotate, blshift, brshift = bit32.rrotate, bit32.lshift, bit32.rshift
-
-local function uint32(n)
-	return band(n, 0xffffffff)
-end
+local strbyte, strsub = string.byte, string.sub
 
 local function bePutUint64(arr, n, offset)
 	offset = offset or 0
-	arr[offset + 1] = band(brshift(n, 56), 0xff)
-	arr[offset + 2] = band(brshift(n, 48), 0xff)
-	arr[offset + 3] = band(brshift(n, 40), 0xff)
-	arr[offset + 4] = band(brshift(n, 32), 0xff)
-	arr[offset + 5] = band(brshift(n, 24), 0xff)
-	arr[offset + 6] = band(brshift(n, 16), 0xff)
-	arr[offset + 7] = band(brshift(n, 8), 0xff)
-	arr[offset + 8] = band(n, 0xff)
+	arr[offset + 1] = brshift(n, 56) % 0x100
+	arr[offset + 2] = brshift(n, 48) % 0x100
+	arr[offset + 3] = brshift(n, 40) % 0x100
+	arr[offset + 4] = brshift(n, 32) % 0x100
+	arr[offset + 5] = brshift(n, 24) % 0x100
+	arr[offset + 6] = brshift(n, 16) % 0x100
+	arr[offset + 7] = brshift(n, 8) % 0x100
+	arr[offset + 8] = n % 0x100
 end
-
-local zeroArrMt = {
-	__index = function(arr, i)
-		if i <= arr.n then
-			return 0
-		end
-		return nil
-	end,
-	__len = function(arr)
-		return arr.n
-	end,
-}
 
 local SIZE = 32
 local BLOCK_SIZE = 64
 
 local chunk = 64
-local chunkMaskInv = bnot(chunk - 1)
 
 local init1 = 0x6A09E667
 local init2 = 0xBB67AE85
@@ -120,57 +104,57 @@ local _K = {
 	0xc67178f2,
 }
 
-local function block(digH, p, pStart, pEnd)
-	local w = {} -- [64]uint32
+local function block(digH, p, pStart, pEnd, w)
 	local h1, h2, h3, h4, h5, h6, h7, h8 = digH[1], digH[2], digH[3], digH[4], digH[5], digH[6], digH[7], digH[8]
 
 	while pEnd - pStart + 1 >= chunk do
 		for i = 1, 16 do
 			local j = pStart + (i - 1) * 4
-			w[i] = bor(blshift(p[j + 0], 24), blshift(p[j + 1], 16), blshift(p[j + 2], 8), p[j + 3])
+			local p1, p2, p3, p4 = strbyte(p, j, j + 3)
+			w[i] = p1 * 0x1000000 + p2 * 0x10000 + p3 * 0x100 + p4
 		end
 		for i = 17, 64 do
 			local v1 = w[i-2]
 			local t1 = bxor(brrotate(v1, 17), brrotate(v1, 19), brshift(v1, 10))
 			local v2 = w[i-15]
 			local t2 = bxor(brrotate(v2, 7), brrotate(v2, 18), brshift(v2, 3))
-			w[i] = uint32(t1 + w[i-7] + t2 + w[i-16])
+			w[i] = (t1 + w[i-7] + t2 + w[i-16]) % 0x100000000
 		end
 
 		local a, b, c, d, e, f, g, h = h1, h2, h3, h4, h5, h6, h7, h8
 
 		for i = 1, 64 do
-			local t1 = uint32(
+			local t1 = (
 				h +
 				bxor(brrotate(e, 6), brrotate(e, 11), brrotate(e, 25)) +
 				bxor(band(e, f), band(bnot(e), g)) +
 				_K[i] +
 				w[i]
-			)
+			) % 0x100000000
 
-			local t2 = uint32(
+			local t2 = (
 				bxor(brrotate(a, 2), brrotate(a, 13), brrotate(a, 22)) +
 				bxor(band(a, b), band(a, c), band(b, c))
-			)
+			) % 0x100000000
 
 			h = g
 			g = f
 			f = e
-			e = uint32(d + t1)
+			e = (d + t1) % 0x100000000
 			d = c
 			c = b
 			b = a
-			a = uint32(t1 + t2)
+			a = (t1 + t2) % 0x100000000
 		end
 
-		h1 = uint32(h1 + a)
-		h2 = uint32(h2 + b)
-		h3 = uint32(h3 + c)
-		h4 = uint32(h4 + d)
-		h5 = uint32(h5 + e)
-		h6 = uint32(h6 + f)
-		h7 = uint32(h7 + g)
-		h8 = uint32(h8 + h)
+		h1 = (h1 + a) % 0x100000000
+		h2 = (h2 + b) % 0x100000000
+		h3 = (h3 + c) % 0x100000000
+		h4 = (h4 + d) % 0x100000000
+		h5 = (h5 + e) % 0x100000000
+		h6 = (h6 + f) % 0x100000000
+		h7 = (h7 + g) % 0x100000000
+		h8 = (h8 + h) % 0x100000000
 
 		pStart = pStart + chunk
 	end
@@ -185,9 +169,9 @@ local function newDigest()
 	digest.blockSize = BLOCK_SIZE
 
 	digest._h = {} -- [8]uint32
-	digest._x = {} -- [chunk]byte
-	digest._nx = 0
+	digest._x = ''
 	digest._len = 0
+	local w = {}
 
 	function digest.reset()
 		local h = digest._h
@@ -199,7 +183,7 @@ local function newDigest()
 		h[6] = init6
 		h[7] = init7
 		h[8] = init8
-		digest._nx = 0
+		digest._x = ''
 		digest._len = 0
 	end
 
@@ -208,42 +192,43 @@ local function newDigest()
 	function digest.copy()
 		local o = newDigest()
 		o._h = {table.unpack(digest._h)}
-		o._x = {table.unpack(digest._x)}
-		o._nx = digest._nx
+		o._x = digest._x
 		o._len = digest._len
 		return o
 	end
 
 	function digest.write(data)
-		expect(1, data, 'string', 'number', 'table')
-		if type(data) == 'string' then
-			data = {data:byte(1, -1)}
-		elseif type(data) == 'number' then
-			data = {data}
+		expect(1, data, 'string', 'number')
+		if type(data) == 'number' then
+			data = string.char(data)
 		end
 
 		local di = 0
 		local dlen = #data
 		digest._len = digest._len + dlen
-		if digest._nx > 0 then
-			local n = math.min(chunk - digest._nx, dlen)
-			table.move(data, 1, n, digest._nx + 1, digest._x)
-			digest._nx = digest._nx + n
-			if digest._nx == chunk then
-				block(digest._h, digest._x, 1, chunk + 1)
-				digest._nx = 0
+		local x = digest._x
+		local nx = #x
+		if nx > 0 then
+			local n = chunk - nx
+			if dlen < n then
+				digest._x = x .. data
+				return digest
 			end
 			di = di + n
+			x = x .. strsub(data, 1, n)
+			block(digest._h, x, 1, chunk + 1, w)
+			digest._x = ''
 		end
-		if dlen - di >= chunk then
-			local n = band(dlen - di, chunkMaskInv)
-			block(digest._h, data, di + 1, di + n)
-			di = di + n
+		local n = dlen - di
+		if n >= chunk then
+			local nn = n
+			n = n % chunk
+			local m = nn - n
+			block(digest._h, data, di + 1, di + m, w)
+			di = di + m
 		end
-		if dlen - di > 0 then
-			local n = math.min(chunk, dlen - di)
-			digest._nx = n
-			table.move(data, di + 1, di + n, 1, digest._x)
+		if n > 0 then
+			digest._x = strsub(data, di + 1, di + n)
 		end
 
 		return digest
@@ -263,9 +248,12 @@ local function newDigest()
 
 		-- Length in bits.
 		len = len * 8
-		local padlen = setmetatable({ n = t + 8, 0x80 }, zeroArrMt)
+		local padlen = {0x80}
+		for i = 2, t do
+			padlen[i] = 0x00
+		end
 		bePutUint64(padlen, len, t)
-		digest.write(padlen)
+		digest.write(string.char(table.unpack(padlen)))
 
 		local h = digest._h
 		return string.pack('>IIIIIIII', h[1], h[2], h[3], h[4], h[5], h[6], h[7], h[8])

@@ -44,6 +44,8 @@ for i, data in ipairs(tests) do
 	else
 		passed = passed + 1
 	end
+	os.queueEvent('')
+	os.pullEvent('')
 end
 
 print(string.format('Passed tests %d / %d', passed, #tests))
