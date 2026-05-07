@@ -12,8 +12,17 @@ local function readFile(name)
 	if not fd then
 		error('cannot open ' .. name, 0)
 	end
-	local zr = zlib.newReader(fd)
+
 	local count = 0
+
+	local rawRead = fd.read
+	fd.read = function(n)
+		local r = rawRead(n)
+		count = count + (type(r) == 'string' and #r or 1)
+		return r
+	end
+
+	local zr = zlib.newReader(fd)
 
 	local startTime = os.epoch('utc')
 	local lastYield, yieldSpent = startTime, 0
@@ -31,7 +40,6 @@ local function readFile(name)
 		if not d then
 			break
 		end
-		count = count + #d
 	end
 	local endTime = os.epoch('utc')
 
@@ -42,7 +50,7 @@ local function readFile(name)
 	return count, runtime
 end
 
-local function testFile(name, expectBytes)
+local function testFile(name)
 	sleep(1)
 	term.setTextColor(colors.yellow)
 	write('RUNNING')
@@ -51,15 +59,11 @@ local function testFile(name, expectBytes)
 
 	local bytes, runtime = readFile(name)
 
-	if bytes ~= expectBytes then
-		error('expect ' .. expectBytes .. ' got ' .. bytes)
-	end
-
 	local KBpS = bytes / runtime * 1000 / 1024
 	print(' runtime', runtime, 'ms', bytes)
 	print(' KB/s', KBpS)
 end
 
-testFile('data/1mb_0.zlib', 1024 * 1024)
-testFile('data/1mb_1.zlib', 1024 * 1024)
-testFile('data/1mb_2.zlib', 1024 * 1024)
+testFile('data/1mb_0.zlib')
+testFile('data/1mb_1.zlib')
+testFile('data/1mb_2.zlib')

@@ -220,7 +220,8 @@ local function newReader(rawReader, dict, windowSize)
 
 	local YIELD_DATA_SYM = {}
 
-	local history = ''
+	local histories = {}
+	local historiesIndex, historiesCount = 1, 0
 	local historyLen = 0
 	local outputBuf = ''
 	local outputBufLen = 0
@@ -229,25 +230,44 @@ local function newReader(rawReader, dict, windowSize)
 		local dl = #d
 		local i = dl - windowSize
 		if i >= 0 then
-			history = strsub(d, i + 1)
+			histories = {strsub(d, i + 1)}
+			historiesIndex, historiesCount = 1, 0
 			historyLen = dl
 		else
 			i = i + historyLen
 			if i <= 0 then
-				history = history .. d
+				histories[historiesIndex + historiesCount] = d
+				historiesCount = historiesCount + 1
 				historyLen = historyLen + dl
 			else
-				history = strsub(history, i + 1) .. d
+				local tbr = i
+				for j = historiesIndex, historiesIndex + historiesCount - 1 do
+					local h = histories[j]
+					local hl = #h
+					if tbr < hl then
+						histories[j] = strsub(h, tbr + 1)
+						break
+					end
+					histories[j] = nil
+					historiesIndex = historiesIndex + 1
+					historiesCount = historiesCount - 1
+					tbr = tbr - hl
+					if tbr == 0 then
+						break
+					end
+				end
+				if historiesIndex > historiesCount then
+					table.move(histories, historiesIndex, historiesIndex + historiesCount - 1, 1)
+					historiesIndex = 1
+				end
+				histories[historiesIndex + historiesCount] = d
+				historiesCount = historiesCount + 1
 			end
 		end
 		if outputBufLen + dl >= MAX_OUTPUT_BUFFER then
-			if outputBufLen > 0 then
-				coroutine.yield(YIELD_DATA_SYM, outputBuf)
-				outputBuf = ''
-				outputBufLen = 0
-			end
-			outputBuf = d
-			outputBufLen = dl
+			coroutine.yield(YIELD_DATA_SYM, outputBuf .. d)
+			outputBuf = ''
+			outputBufLen = 0
 		else
 			outputBuf = outputBuf .. d
 			outputBufLen = outputBufLen + dl
@@ -403,12 +423,33 @@ local function newReader(rawReader, dict, windowSize)
 				if dist > historyLen then
 					error(string.format('flate: distance ' .. dist .. ' overflowed ' .. historyLen))
 				end
-				while length > dist do
-					local out = strsub(history, -dist)
-					length = length - #out
-					output(out)
+
+				local historiesEndIndex = historiesCount + historiesIndex - 1
+				local tailLen = 0
+				for i = historiesEndIndex, historiesIndex, -1 do
+					local h = histories[i]
+					tailLen = tailLen + #h
+					if tailLen >= dist then
+						if i ~= historiesEndIndex then
+							histories[i] = table.concat(histories, '', i, historiesEndIndex)
+							for j = i + 1, historiesEndIndex do
+								histories[j] = i
+							end
+							historiesEndIndex = i
+							historiesCount = i - historiesIndex + 1
+						end
+						break
+					end
 				end
-				output(strsub(history, -dist, -dist + length - 1))
+
+				local lastHistory = histories[historiesEndIndex]
+				local rep = math.floor(length / dist)
+				if rep > 0 then
+					local out = strsub(lastHistory, -dist)
+					length = length - rep * dist
+					output(string.rep(out, rep))
+				end
+				output(strsub(lastHistory, -dist, -dist + length - 1))
 			end
 		end
 	end
